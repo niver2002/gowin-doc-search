@@ -18,8 +18,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
 SIPEED_API = "https://api.dl.sipeed.com/fileList"
-SIPEED_DL = "https://dl.sipeed.com/fileList"
+SIPEED_DL = "https://dl.sipeed.com"
+SIPEED_SHARE = "https://dl.sipeed.com/shareURL"
 INDEX_FILE = Path(__file__).parent / "sipeed_index.json"
+LARGE_FILE_THRESHOLD_MB = 10
 
 # ============================================================
 # 板卡 → 芯片 + 产品线 映射（已知高云平台板卡）
@@ -117,6 +119,37 @@ FILENAME_CATEGORY_PATTERNS = [
     (re.compile(r"release.?note", re.I), "ReleaseNote", None),
     (re.compile(r"example|demo|ref.?design", re.I), "ReferenceDesign", None),
 ]
+
+
+def parse_file_size_mb(size_str):
+    """解析文件大小字符串为 MB"""
+    if not size_str or size_str == "-":
+        return 0
+    size_str = size_str.strip().upper()
+    try:
+        if "GB" in size_str:
+            return float(size_str.replace("GB", "").strip()) * 1024
+        elif "MB" in size_str:
+            return float(size_str.replace("MB", "").strip())
+        elif "KB" in size_str:
+            return float(size_str.replace("KB", "").strip()) / 1024
+        elif "B" in size_str:
+            return float(size_str.replace("B", "").strip()) / (1024 * 1024)
+    except ValueError:
+        pass
+    return 0
+
+
+def make_download_url(file_url, file_size):
+    """生成下载 URL：小文件直链，大文件链接到目录页"""
+    size_mb = parse_file_size_mb(file_size)
+    if size_mb >= LARGE_FILE_THRESHOLD_MB:
+        # 大文件：链接到父目录的 shareURL 页面
+        parent_dir = "/".join(file_url.split("/")[:-1])
+        return f"{SIPEED_SHARE}/{quote(parent_dir, safe='/')}"
+    else:
+        # 小文件：直接下载
+        return f"{SIPEED_DL}/{quote(file_url, safe='/')}"
 
 
 def detect_file_format(filename):
@@ -300,7 +333,7 @@ def crawl_recursive(path, docs, depth=0, max_depth=6):
             file_format = detect_file_format(name)
             version = extract_version(name)
             platforms = detect_platform_os(name)
-            download_url = f"{SIPEED_DL}/{quote(file_url, safe='/')}"
+            download_url = make_download_url(file_url, file_size)
 
             doc_entry = {
                 "title": name,
