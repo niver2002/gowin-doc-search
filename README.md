@@ -25,13 +25,24 @@ python scraper_sipeed.py   # 抓取 Sipeed（公开 API，无需账号）-> sipe
 python build_index.py      # 合并 -> data/index.json
 ```
 
+### Gowin 登录与「需登录」文档下载
+
+高云官网（gowinsemi.com）部分文档下载需要登录，且登录带**图形验证码**，
+无法服务端全自动免登录。本站做法：
+
+1. 点击右上角「登录高云账号」，弹窗已预填公共账号（`contact@streamly.cn`）。
+2. 服务端代理高云的验证码图（`/api/gowin/captcha`），用户**手动输入验证码（区分大小写）**。
+3. 登录成功后，把高云的 `PHPSESSID` 存进本站 httpOnly cookie；「需登录」文档按钮变为「下载」，
+   经本站代理（`/api/gowin/download`）用该会话拉取真实 PDF 回传给浏览器，无需再跳官网。
+
+相关 API：`/api/gowin/{captcha,login,status,logout,download}`。会话过期后重新登录即可。
+
 ### 已知限制
 
 - **Sipeed 大文件（≥10MB）**：Sipeed 不提供 HTTP 直链，这类文件统一指向
   `dl.sipeed.com/shareURL/...` 网盘引导页（含百度网盘 / Mega 链接），界面标注「网盘下载」。
-- **Gowin「需登录」文档**：高云官网登录带图形验证码，无法服务端自动登录，
-  因此无法替访客免登录下载。这类文档界面标注「需登录」，点击跳转官网，
-  需用户自行登录后下载。公开文档（cdn.gowinsemi.com）可直接下载。
+- **Gowin 验证码**：登录需人工识别验证码，无法跳过（这是高云官网的安全机制）。
+- 公开文档（cdn.gowinsemi.com）与 Sipeed 小文件始终可直接下载，无需登录。
 
 ---
 
