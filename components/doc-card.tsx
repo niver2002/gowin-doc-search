@@ -1,5 +1,9 @@
+"use client"
+
+import { useState } from "react"
 import type { DocItem } from "@/lib/docs"
 import { categoryClass, categoryLabel } from "@/lib/labels"
+import { useGowinAuth } from "@/components/gowin-auth"
 
 function Tag({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
@@ -20,6 +24,93 @@ function highlight(text: string, query: string): React.ReactNode {
   const parts = text.split(regex)
   return parts.map((part, i) =>
     regex.test(part) ? <mark key={i}>{part}</mark> : <span key={i}>{part}</span>,
+  )
+}
+
+function DownloadButton({ doc }: { doc: DocItem }) {
+  const { authed, openLogin } = useGowinAuth()
+  const [busy, setBusy] = useState(false)
+  const isLogin = doc.access === "login_required"
+  const isNetdisk = doc.requires_netdisk === true
+
+  // Sipeed netdisk file: link to the share page.
+  if (isNetdisk) {
+    return (
+      <a
+        href={doc.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex-shrink-0 whitespace-nowrap rounded-lg bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary transition hover:bg-primary/20"
+      >
+        网盘
+      </a>
+    )
+  }
+
+  // Public file (Gowin CDN or Sipeed direct): plain download.
+  if (!isLogin) {
+    return (
+      <a
+        href={doc.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex-shrink-0 whitespace-nowrap rounded-lg bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary transition hover:bg-primary/20"
+      >
+        下载
+      </a>
+    )
+  }
+
+  // Login-required file: if authed, stream through proxy; else open login.
+  if (!authed) {
+    return (
+      <button
+        onClick={openLogin}
+        className="flex-shrink-0 whitespace-nowrap rounded-lg bg-yellow-100 px-3 py-1.5 text-sm font-medium text-yellow-800 transition hover:bg-yellow-200"
+      >
+        登录下载
+      </button>
+    )
+  }
+
+  const proxyDownload = async () => {
+    setBusy(true)
+    try {
+      const name = `${doc.title}.${doc.file_format || "pdf"}`
+      const href = `/api/gowin/download?url=${encodeURIComponent(doc.url)}&name=${encodeURIComponent(name)}`
+      const res = await fetch(href)
+      if (res.status === 401) {
+        openLogin()
+        return
+      }
+      if (!res.ok) {
+        alert("下载失败，请稍后重试")
+        return
+      }
+      const blob = await res.blob()
+      const objUrl = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = objUrl
+      a.download = name.replace(/[^\w.\-\u4e00-\u9fa5]+/g, "_")
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(objUrl)
+    } catch {
+      alert("下载失败，请稍后重试")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <button
+      onClick={proxyDownload}
+      disabled={busy}
+      className="flex-shrink-0 whitespace-nowrap rounded-lg bg-green-100 px-3 py-1.5 text-sm font-medium text-green-700 transition hover:bg-green-200 disabled:opacity-50"
+    >
+      {busy ? "下载中…" : "下载"}
+    </button>
   )
 }
 
@@ -74,14 +165,7 @@ export function DocCard({ doc, index, query }: { doc: DocItem; index: number; qu
           </a>
           {doc.doc_number && <span className="mt-0.5 block text-xs text-muted">{doc.doc_number}</span>}
         </div>
-        <a
-          href={doc.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex-shrink-0 whitespace-nowrap rounded-lg bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary transition hover:bg-primary/20"
-        >
-          {isLogin ? "前往" : isNetdisk ? "网盘" : "下载"}
-        </a>
+        <DownloadButton doc={doc} />
       </div>
     </article>
   )
