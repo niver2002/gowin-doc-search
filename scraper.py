@@ -79,36 +79,61 @@ def load_config():
     return DEFAULT_CREDENTIALS.copy()
 
 
-def create_session(config):
-    """登录并返回已认证的 session"""
+def create_session(config, max_retries=3):
+    """登录并返回已认证的 session（带重试）"""
     session = requests.Session()
     session.headers.update(HEADERS)
 
-    print("[*] 访问登录页...")
-    login_page = session.get(f"{BASE_URL}/login/user/login_input", timeout=15)
+    for attempt in range(1, max_retries + 1):
+        try:
+            retry_msg = f" (重试 {attempt}/{max_retries})" if attempt > 1 else ""
+            print(f"[*] 访问登录页...{retry_msg}")
+            login_page = session.get(f"{BASE_URL}/login/user/login_input", timeout=20)
+            login_page.raise_for_status()
 
-    print(f"[*] 正在登录 ({config['email']})...")
-    login_data = {
-        "email": config["email"],
-        "password": config["password"],
-    }
+            print(f"[*] 正在登录 ({config['email']})...")
+            login_data = {
+                "email": config["email"],
+                "password": config["password"],
+            }
 
-    soup = BeautifulSoup(login_page.text, "lxml")
-    hidden_inputs = soup.find_all("input", {"type": "hidden"})
-    for inp in hidden_inputs:
-        name = inp.get("name")
-        value = inp.get("value", "")
-        if name and name not in login_data:
-            login_data[name] = value
+            soup = BeautifulSoup(login_page.text, "lxml")
+            hidden_inputs = soup.find_all("input", {"type": "hidden"})
+            for inp in hidden_inputs:
+                name = inp.get("name")
+                value = inp.get("value", "")
+                if name and name not in login_data:
+                    login_data[name] = value
 
-    resp = session.post(LOGIN_URL, data=login_data, allow_redirects=True, timeout=15)
+            # 提取 CSRF token（如果有）
+            csrf_meta = soup.find("meta", {"name": "csrf-token"})
+            if csrf_meta:
+                session.headers["X-CSRF-Token"] = csrf_meta.get("content", "")
 
-    test = session.get(DOC_DB_URL, timeout=15)
-    if "database_doc" in test.text or "chkLogin" in test.text:
-        print("[✓] 登录成功")
-    else:
-        print("[!] 登录状态不确定，继续尝试...")
+            resp = session.post(LOGIN_URL, data=login_data, allow_redirects=True, timeout=20)
 
+            # 验证登录状态
+            test = session.get(DOC_DB_URL, timeout=15)
+            if "database_doc" in test.text or "chkLogin" in test.text:
+                print("[✓] 登录成功")
+                return session
+
+            # 检查是否被重定向到登录页
+            if "login_input" in test.url or "login" in test.url:
+                print("[!] 登录失败（被重定向到登录页）")
+            else:
+                print("[!] 登录状态不确定，继续尝试...")
+                return session
+
+        except requests.exceptions.RequestException as e:
+            print(f"[!] 网络错误: {e}")
+
+        if attempt < max_retries:
+            wait = attempt * 2
+            print(f"[*] {wait}s 后重试...")
+            time.sleep(wait)
+
+    print("[!] 登录重试已耗尽，使用当前 session 继续...")
     return session
 
 
