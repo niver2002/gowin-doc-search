@@ -141,15 +141,20 @@ def parse_file_size_mb(size_str):
 
 
 def make_download_url(file_url, file_size):
-    """生成下载 URL：小文件直链，大文件链接到目录页"""
+    """生成下载 URL：小文件直链，大文件链接到 shareURL 网盘引导页。
+
+    返回 (download_url, requires_netdisk)。
+    Sipeed 对 >=10MB 的文件不提供 HTTP 直链（直链会返回
+    {"code":-1,"msg":"This is a large file"}），必须通过 shareURL 页面
+    跳转到百度网盘 / Mega 下载。shareURL 页支持精确到文件路径。
+    """
     size_mb = parse_file_size_mb(file_size)
     if size_mb >= LARGE_FILE_THRESHOLD_MB:
-        # 大文件：链接到父目录的 shareURL 页面
-        parent_dir = "/".join(file_url.split("/")[:-1])
-        return f"{SIPEED_SHARE}/{quote(parent_dir, safe='/')}"
+        # 大文件：指向该文件所在的 shareURL 网盘引导页（含百度网盘 / Mega 链接）
+        return f"{SIPEED_SHARE}/{quote(file_url, safe='/')}", True
     else:
         # 小文件：直接下载
-        return f"{SIPEED_DL}/{quote(file_url, safe='/')}"
+        return f"{SIPEED_DL}/{quote(file_url, safe='/')}", False
 
 
 def detect_file_format(filename):
@@ -333,7 +338,7 @@ def crawl_recursive(path, docs, depth=0, max_depth=6):
             file_format = detect_file_format(name)
             version = extract_version(name)
             platforms = detect_platform_os(name)
-            download_url = make_download_url(file_url, file_size)
+            download_url, requires_netdisk = make_download_url(file_url, file_size)
 
             doc_entry = {
                 "title": name,
@@ -354,6 +359,7 @@ def crawl_recursive(path, docs, depth=0, max_depth=6):
                 "path": file_url,
                 "file_size": file_size,
                 "last_update": last_update,
+                "requires_netdisk": requires_netdisk,
             }
             docs.append(doc_entry)
 
