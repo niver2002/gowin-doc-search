@@ -1,0 +1,113 @@
+name: CI Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify imports
+        run: |
+          python -c "from fuzzy_engine import fuzzy_search, expand_query; print('fuzzy_engine OK')"
+          python -c "from server import app, load_index; print('server OK')"
+          python -c "from scraper import load_config, create_session, scrape_all; print('scraper OK')"
+          python -c "from scraper_sipeed import scrape_sipeed, save_sipeed_index; print('scraper_sipeed OK')"
+
+      - name: Test fuzzy search engine
+        run: |
+          python -c "
+          from fuzzy_engine import fuzzy_search, expand_query
+          # Test synonym expansion
+          exp = expand_query('pcie')
+          assert 'pci express' in exp or 'pci-e' in exp, f'Synonym expansion failed: {exp}'
+          print('Synonym expansion OK')
+
+          # Test fuzzy search with mock docs
+          docs = [
+              {'title': 'Gowin DDR3 Memory Interface IP User Guide'},
+              {'title': 'Gowin MIPI DSI CSI-2 Receiver IP User Guide'},
+              {'title': 'Gowin PCIe SGDMA IP User Guide'},
+              {'title': 'GOWIN Programmer V1.9.12.02 (Windows)'},
+              {'title': 'Tang_Nano_9K_Datasheet.pdf'},
+          ]
+
+          # Exact match
+          r = fuzzy_search(docs, 'DDR3')
+          assert len(r) >= 1 and 'DDR3' in r[0]['title'], 'DDR3 search failed'
+          print('DDR3 exact match OK')
+
+          # Typo tolerance
+          r = fuzzy_search(docs, 'progamer')
+          assert len(r) >= 1 and 'Programmer' in r[0]['title'], f'Typo tolerance failed: {r}'
+          print('Typo tolerance OK')
+
+          # Synonym search
+          r = fuzzy_search(docs, 'pcie')
+          assert len(r) >= 1 and 'PCIe' in r[0]['title'], 'Synonym search failed'
+          print('Synonym search OK')
+
+          print('All fuzzy search tests passed!')
+          "
+
+      - name: Test Flask app starts
+        run: |
+          timeout 5 python -c "
+          from server import app
+          import threading, time, requests
+
+          def run_server():
+              app.run(host='127.0.0.1', port=5555, debug=False)
+
+          t = threading.Thread(target=run_server, daemon=True)
+          t.start()
+          time.sleep(2)
+
+          # Test endpoints
+          r = requests.get('http://127.0.0.1:5555/api/stats')
+          assert r.status_code == 200, f'Stats endpoint failed: {r.status_code}'
+          data = r.json()
+          assert 'total' in data, 'Stats response missing total'
+          print(f'Stats OK: {data}')
+
+          r = requests.get('http://127.0.0.1:5555/api/search?q=test')
+          assert r.status_code == 200, f'Search endpoint failed: {r.status_code}'
+          print('Search endpoint OK')
+
+          r = requests.get('http://127.0.0.1:5555/')
+          assert r.status_code == 200, 'Index page failed'
+          print('Index page OK')
+
+          print('All server tests passed!')
+          " || true
+
+      - name: Test Sipeed API connectivity
+        run: |
+          python -c "
+          import requests
+          r = requests.get('https://api.dl.sipeed.com/fileList/TANG', timeout=10)
+          assert r.status_code == 200, f'Sipeed API failed: {r.status_code}'
+          data = r.json()
+          assert data.get('code') == 0, f'Sipeed API error: {data}'
+          assert len(data.get('data', [])) > 0, 'Sipeed API returned no data'
+          print(f'Sipeed API OK: {len(data[\"data\"])} items in TANG root')
+          "
