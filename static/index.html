@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高云半导体文档检索 v2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        .fade-in { animation: fadeIn 0.2s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+        .tag { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-size: 0.7rem; font-weight: 500; margin-right: 0.25rem; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="max-w-7xl mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">📄 高云半导体文档检索</h1>
+            <p class="text-gray-500" id="stats">加载中...</p>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="bg-white rounded-xl shadow-sm border p-6 mb-6">
+            <div class="flex flex-col md:flex-row gap-4">
+                <div class="flex-1">
+                    <input type="text" id="searchInput"
+                        placeholder="输入关键词: DDR3, GW5A, User Guide, EDA, MIPI..."
+                        class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                        autofocus>
+                </div>
+                <button onclick="doSearch()" class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium">
+                    搜索
+                </button>
+            </div>
+
+            <!-- Filters Row 1 -->
+            <div class="flex flex-wrap gap-3 mt-4">
+                <select id="categoryFilter" class="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">所有分类</option>
+                </select>
+                <select id="chipFilter" class="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">所有芯片</option>
+                </select>
+                <select id="productLineFilter" class="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">所有产品线</option>
+                </select>
+                <select id="formatFilter" class="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">所有格式</option>
+                </select>
+                <select id="accessFilter" class="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">所有访问类型</option>
+                    <option value="public">公开 (CDN)</option>
+                    <option value="login_required">需登录</option>
+                </select>
+                <select id="sourceFilter" class="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">所有来源</option>
+                    <option value="gowin">高云官方</option>
+                    <option value="sipeed">Sipeed</option>
+                </select>
+                <button onclick="clearFilters()" class="px-3 py-2 text-sm text-gray-500 hover:text-red-500 transition">
+                    ✕ 清除筛选
+                </button>
+            </div>
+        </div>
+
+        <!-- Results -->
+        <div id="results" class="space-y-2"></div>
+
+        <!-- Pagination -->
+        <div id="pagination" class="flex justify-center items-center gap-4 mt-6 hidden">
+            <button onclick="prevPage()" id="prevBtn" class="px-4 py-2 bg-white border rounded-lg hover:bg-gray-50 transition disabled:opacity-40" disabled>
+                ← 上一页
+            </button>
+            <span id="pageInfo" class="text-gray-600 text-sm"></span>
+            <button onclick="nextPage()" id="nextBtn" class="px-4 py-2 bg-white border rounded-lg hover:bg-gray-50 transition disabled:opacity-40" disabled>
+                下一页 →
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        let totalPages = 1;
+
+        const catColors = {
+            Software: "bg-purple-100 text-purple-700",
+            DataSheet: "bg-red-100 text-red-700",
+            UserGuide: "bg-blue-100 text-blue-700",
+            Reference: "bg-indigo-100 text-indigo-700",
+            ReferenceDesign: "bg-violet-100 text-violet-700",
+            AppNote: "bg-green-100 text-green-700",
+            ReleaseNote: "bg-yellow-100 text-yellow-700",
+            Schematic: "bg-orange-100 text-orange-700",
+            DevBoard: "bg-cyan-100 text-cyan-700",
+            QuickStart: "bg-emerald-100 text-emerald-700",
+            PackagePinout: "bg-lime-100 text-lime-700",
+            Errata: "bg-pink-100 text-pink-700",
+            IP: "bg-sky-100 text-sky-700",
+            SDK: "bg-teal-100 text-teal-700",
+            Advisory: "bg-amber-100 text-amber-700",
+            Firmware: "bg-rose-100 text-rose-700",
+            Certificate: "bg-fuchsia-100 text-fuchsia-700",
+            Introduction: "bg-slate-100 text-slate-700",
+            Document: "bg-gray-100 text-gray-600",
+            Package: "bg-zinc-100 text-zinc-600",
+            Other: "bg-gray-100 text-gray-600",
+        };
+
+        const catLabels = {
+            Software: "软件",
+            DataSheet: "数据手册",
+            UserGuide: "用户指南",
+            Reference: "参考手册",
+            ReferenceDesign: "参考设计",
+            AppNote: "应用笔记",
+            ReleaseNote: "发布说明",
+            Schematic: "原理图",
+            DevBoard: "开发板",
+            QuickStart: "快速入门",
+            PackagePinout: "封装引脚",
+            Errata: "勘误",
+            IP: "IP核",
+            SDK: "SDK",
+            Advisory: "产品公告",
+            Firmware: "固件",
+            Certificate: "认证证书",
+            Introduction: "产品简介",
+            Document: "文档",
+            Package: "软件包",
+            Other: "其他",
+        };
+
+        const formatIcons = {
+            pdf: "📄",
+            zip: "📦",
+            "tar.gz": "📦",
+            gz: "📦",
+            bin: "💾",
+            docx: "📝",
+            dmg: "💿",
+            rar: "📦",
+            exe: "⚙️",
+            unknown: "❓",
+        };
+
+        async function init() {
+            await loadStats();
+            await loadFilters();
+            doSearch();
+        }
+
+        async function loadStats() {
+            try {
+                const resp = await fetch("/api/stats");
+                const data = await resp.json();
+                const pub = data.access?.public || 0;
+                const login = data.access?.login_required || 0;
+                document.getElementById("stats").textContent =
+                    `共 ${data.total} 篇文档 (公开 ${pub} / 需登录 ${login}) | 索引更新: ${data.updated_at}`;
+            } catch (e) {
+                document.getElementById("stats").textContent = "索引未就绪，请先运行 scraper.py";
+            }
+        }
+
+        async function loadFilters() {
+            try {
+                const [catsResp, chipsResp, plResp, fmtResp] = await Promise.all([
+                    fetch("/api/categories"),
+                    fetch("/api/chips"),
+                    fetch("/api/product_lines"),
+                    fetch("/api/formats"),
+                ]);
+                const cats = await catsResp.json();
+                const chips = await chipsResp.json();
+                const pls = await plResp.json();
+                const fmts = await fmtResp.json();
+
+                fillSelect("categoryFilter", cats, k => {
+                    const base = k.split("/")[0];
+                    return catLabels[base] ? `${catLabels[base]}${k.includes("/") ? "/" + k.split("/")[1] : ""}` : k;
+                });
+                fillSelect("chipFilter", chips);
+                fillSelect("productLineFilter", pls);
+                fillSelect("formatFilter", fmts);
+            } catch (e) {
+                console.error("加载筛选项失败:", e);
+            }
+        }
+
+        function fillSelect(id, items, labelFn) {
+            const el = document.getElementById(id);
+            items.forEach(([key, count]) => {
+                const opt = document.createElement("option");
+                opt.value = key;
+                opt.textContent = labelFn ? `${labelFn(key)} (${count})` : `${key} (${count})`;
+                el.appendChild(opt);
+            });
+        }
+
+        async function doSearch(page = 1) {
+            currentPage = page;
+            const params = new URLSearchParams();
+
+            const q = document.getElementById("searchInput").value.trim();
+            const cat = document.getElementById("categoryFilter").value;
+            const chip = document.getElementById("chipFilter").value;
+            const pl = document.getElementById("productLineFilter").value;
+            const fmt = document.getElementById("formatFilter").value;
+            const acc = document.getElementById("accessFilter").value;
+            const src = document.getElementById("sourceFilter").value;
+
+            if (q) params.set("q", q);
+            if (cat) params.set("category", cat);
+            if (chip) params.set("chip", chip);
+            if (pl) params.set("product_line", pl);
+            if (fmt) params.set("format", fmt);
+            if (acc) params.set("access", acc);
+            if (src) params.set("source", src);
+            params.set("page", page);
+            params.set("size", 20);
+
+            try {
+                const resp = await fetch(`/api/search?${params}`);
+                const data = await resp.json();
+                renderResults(data);
+            } catch (e) {
+                document.getElementById("results").innerHTML =
+                    '<div class="text-center text-gray-500 py-12">搜索请求失败</div>';
+            }
+        }
+
+        function renderResults(data) {
+            const container = document.getElementById("results");
+            totalPages = data.total_pages;
+
+            if (data.results.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-400 py-12 text-lg">没有找到匹配的文档</div>';
+                document.getElementById("pagination").classList.add("hidden");
+                return;
+            }
+
+            let html = "";
+            data.results.forEach((doc, idx) => {
+                const num = (currentPage - 1) * 20 + idx + 1;
+                const catBase = doc.category;
+                const catColor = catColors[catBase] || catColors.Other;
+                const catLabel = catLabels[catBase] || catBase;
+                const subLabel = doc.subcategory ? `/${doc.subcategory}` : "";
+                const fmtIcon = formatIcons[doc.file_format] || "📄";
+                const accessBadge = doc.access === "public"
+                    ? '<span class="tag bg-green-100 text-green-700">公开</span>'
+                    : '<span class="tag bg-yellow-100 text-yellow-700">需登录</span>';
+                const versionBadge = doc.version
+                    ? `<span class="tag bg-gray-100 text-gray-600">v${doc.version}</span>` : "";
+                const chipTags = (doc.chips || []).map(c =>
+                    `<span class="tag bg-slate-100 text-slate-600">${c}</span>`).join("");
+                const plTags = (doc.product_line || []).map(p =>
+                    `<span class="tag bg-indigo-50 text-indigo-600">${p}</span>`).join("");
+                const platformTags = (doc.platform || []).map(p =>
+                    `<span class="tag bg-cyan-50 text-cyan-600">${p}</span>`).join("");
+                const sourceBadge = doc.source === "sipeed"
+                    ? '<span class="tag bg-orange-100 text-orange-700">Sipeed</span>'
+                    : '<span class="tag bg-blue-50 text-blue-700">高云</span>';
+
+                html += `
+                <div class="bg-white rounded-lg border hover:shadow-md transition p-4 fade-in">
+                    <div class="flex items-start gap-3">
+                        <span class="text-gray-300 text-sm font-mono w-8 text-right flex-shrink-0 pt-1">${num}</span>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-1 mb-1.5 flex-wrap">
+                                ${sourceBadge}
+                                <span class="tag ${catColor}">${catLabel}${subLabel}</span>
+                                ${accessBadge}
+                                <span class="tag bg-gray-50 text-gray-500">${fmtIcon} ${doc.file_format}</span>
+                                ${versionBadge}
+                                ${chipTags}
+                                ${plTags}
+                                ${platformTags}
+                            </div>
+                            <a href="${doc.url}" target="_blank" rel="noopener"
+                                class="text-gray-800 hover:text-blue-600 font-medium block truncate transition"
+                                title="${doc.title}">
+                                ${highlightKeyword(doc.title)}
+                            </a>
+                            ${doc.doc_number ? `<span class="text-xs text-gray-400 mt-0.5 block">${doc.doc_number}</span>` : ""}
+                        </div>
+                        <a href="${doc.url}" target="_blank" rel="noopener"
+                            class="flex-shrink-0 px-3 py-1.5 text-sm bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition whitespace-nowrap">
+                            下载 ↗
+                        </a>
+                    </div>
+                </div>`;
+            });
+
+            container.innerHTML = html;
+
+            const pagination = document.getElementById("pagination");
+            if (totalPages > 1) {
+                pagination.classList.remove("hidden");
+                document.getElementById("pageInfo").textContent = `第 ${currentPage}/${totalPages} 页 (共 ${data.total} 条)`;
+                document.getElementById("prevBtn").disabled = currentPage <= 1;
+                document.getElementById("nextBtn").disabled = currentPage >= totalPages;
+            } else {
+                pagination.classList.add("hidden");
+            }
+        }
+
+        function highlightKeyword(text) {
+            const keyword = document.getElementById("searchInput").value.trim();
+            if (!keyword) return text;
+            const words = keyword.split(/\s+/);
+            let result = text;
+            words.forEach(word => {
+                const regex = new RegExp(`(${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, "gi");
+                result = result.replace(regex, '<mark class="bg-yellow-200 rounded px-0.5">$1</mark>');
+            });
+            return result;
+        }
+
+        function prevPage() { if (currentPage > 1) doSearch(currentPage - 1); }
+        function nextPage() { if (currentPage < totalPages) doSearch(currentPage + 1); }
+
+        function clearFilters() {
+            document.getElementById("searchInput").value = "";
+            document.getElementById("categoryFilter").value = "";
+            document.getElementById("chipFilter").value = "";
+            document.getElementById("productLineFilter").value = "";
+            document.getElementById("formatFilter").value = "";
+            document.getElementById("accessFilter").value = "";
+            document.getElementById("sourceFilter").value = "";
+            doSearch(1);
+        }
+
+        document.getElementById("searchInput").addEventListener("keydown", (e) => {
+            if (e.key === "Enter") doSearch(1);
+        });
+
+        ["categoryFilter", "chipFilter", "productLineFilter", "formatFilter", "accessFilter", "sourceFilter"].forEach(id => {
+            document.getElementById(id).addEventListener("change", () => doSearch(1));
+        });
+
+        init();
+    </script>
+</body>
+</html>

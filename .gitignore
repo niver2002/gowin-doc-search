@@ -1,0 +1,9 @@
+config.json
+docs_index.json
+sipeed_index.json
+__pycache__/
+*.pyc
+.env
+__deps_installed__
+.venv/
+gowin_doc.zip
