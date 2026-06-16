@@ -7,7 +7,8 @@
 
 ## 在线版（Vercel）
 
-应用读取已抓取好的静态索引 `data/index.json`，无后端依赖，可直接部署 Vercel。
+应用读取索引数据：**优先读 Vercel Blob 上的最新索引**，读不到时回退到打包的静态
+`data/index.json`，可直接部署 Vercel。
 
 ```bash
 npm install
@@ -15,14 +16,25 @@ npm run dev        # 本地预览 http://localhost:3000
 npm run build      # 生产构建
 ```
 
-部署：把仓库连接到 Vercel，框架选 Next.js，零额外配置即可。
+部署：把仓库连接到 Vercel，框架选 Next.js。需要连接 **Vercel Blob** 集成（提供
+`BLOB_READ_WRITE_TOKEN`）。
 
-### 刷新数据
+### 自动抓取（每日定时）
+
+`vercel.json` 配置了 Cron，每天 **北京时间凌晨 3 点**（`0 19 * * *` UTC）触发
+`/api/cron/scrape`：用 TypeScript 抓取器重新抓取 Gowin 文档列表与 Sipeed 文件列表，
+合并后写入 Vercel Blob（`index/index.json`）。页面与搜索随即读到新数据，无需重新部署。
+
+- 抓取逻辑：`lib/scrapers/gowin.ts`、`lib/scrapers/sipeed.ts`、`lib/build-index.ts`
+- 安全：设置环境变量 `CRON_SECRET` 后，cron 路由会校验 `Authorization: Bearer <CRON_SECRET>`
+  （Vercel Cron 会自动带上）。手动触发：`curl -H "Authorization: Bearer $CRON_SECRET" <域名>/api/cron/scrape`
+
+### 手动刷新（可选 · 本地 Python 脚本）
 
 ```bash
 python scraper.py          # 抓取 Gowin（需 config.json 账号）-> docs_index.json
 python scraper_sipeed.py   # 抓取 Sipeed（公开 API，无需账号）-> sipeed_index.json
-python build_index.py      # 合并 -> data/index.json
+python build_index.py      # 合并 -> data/index.json（作为静态回退）
 ```
 
 ### Gowin 登录与「需登录」文档下载
