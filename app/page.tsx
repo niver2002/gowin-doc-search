@@ -1,10 +1,17 @@
-import { FACETS, META } from "@/lib/docs"
+import { buildFacets, buildMeta } from "@/lib/docs"
+import { loadIndex } from "@/lib/index-store"
 import { SearchExplorer } from "@/components/search-explorer"
 import { GowinAuthProvider } from "@/components/gowin-auth"
 import { LoginDialog } from "@/components/login-dialog"
 import { AuthButton } from "@/components/auth-button"
 
-export default function HomePage() {
+export const dynamic = "force-dynamic"
+
+export default async function HomePage() {
+  const index = await loadIndex()
+  const META = buildMeta(index)
+  const FACETS = buildFacets(index.documents)
+
   return (
     <GowinAuthProvider>
       <main className="mx-auto max-w-6xl px-4 py-8 md:py-12">
