@@ -1,5 +1,42 @@
 # 高云半导体文档检索工具
 
+文档检索聚合工具，统一检索 Gowin 官方与 Sipeed TANG 的资料，解决官网查询繁琐的问题。
+
+> 现已提供 **Next.js 在线版**（可部署到 Vercel），见下方「在线版（Vercel）」。
+> 原 Python/Flask 本地版仍保留。
+
+## 在线版（Vercel）
+
+应用读取已抓取好的静态索引 `data/index.json`，无后端依赖，可直接部署 Vercel。
+
+```bash
+npm install
+npm run dev        # 本地预览 http://localhost:3000
+npm run build      # 生产构建
+```
+
+部署：把仓库连接到 Vercel，框架选 Next.js，零额外配置即可。
+
+### 刷新数据
+
+```bash
+python scraper.py          # 抓取 Gowin（需 config.json 账号）-> docs_index.json
+python scraper_sipeed.py   # 抓取 Sipeed（公开 API，无需账号）-> sipeed_index.json
+python build_index.py      # 合并 -> data/index.json
+```
+
+### 已知限制
+
+- **Sipeed 大文件（≥10MB）**：Sipeed 不提供 HTTP 直链，这类文件统一指向
+  `dl.sipeed.com/shareURL/...` 网盘引导页（含百度网盘 / Mega 链接），界面标注「网盘下载」。
+- **Gowin「需登录」文档**：高云官网登录带图形验证码，无法服务端自动登录，
+  因此无法替访客免登录下载。这类文档界面标注「需登录」，点击跳转官网，
+  需用户自行登录后下载。公开文档（cdn.gowinsemi.com）可直接下载。
+
+---
+
+## 本地版（Python / Flask）
+
 本地文档检索工具，解决官网查询文档繁琐的问题。
 
 ## 功能
